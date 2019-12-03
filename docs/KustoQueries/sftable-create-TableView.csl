@@ -1,0 +1,11 @@
+.create-or-alter function with (docstring = 'function to create TableView view for sftable', folder = 'sftable')
+    TableView(T:string) {
+        let Table = table(T);
+        let DistinctEvents = Table | distinct Timestamp, PartitionKey, RowKey;
+        DistinctEvents
+            | join Table on $left.Timestamp==$right.Timestamp and $left.PartitionKey==$right.PartitionKey and $left.RowKey==$right.RowKey
+            | extend propertyPack = pack(PropertyName, PropertyValue)
+            | summarize bag = make_bag(propertyPack) by Timestamp, PartitionKey, RowKey, RelativeUri
+            | evaluate bag_unpack(bag) 
+        | order by Timestamp asc
+    }
