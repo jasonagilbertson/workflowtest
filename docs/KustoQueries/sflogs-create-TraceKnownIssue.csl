@@ -1,0 +1,92 @@
+// sflogs issue query of Type and/or Text or Any
+.create-or-alter function with (docstring = '[T:string] where T=table name. function to search service fabric sflogs for known issues. good place to start', folder = 'sflogs/_start-here')
+    TraceKnownIssue (T:string) {
+        // search any column using string contains
+        let AnyContains = (tableName:string, issue:string, query:string) {
+            table(tableName) | extend KnownIssue = iif((* contains query), true, false) | extend Reason = iif(KnownIssue, issue, "")
+        };
+        // search any column using regex sensitive match
+        let AnyMatches = (tableName:string, issue:string, query:string) {
+            table(tableName) | extend KnownIssue = iif((* matches regex query), true, false) | extend Reason = iif(KnownIssue, issue, "")
+        };
+        // search any column using regex insensitive match
+        let AnyIMatches = (tableName:string, issue:string, query:string) {
+            let iQuery = strcat('(?i:',query,')'); // re2 case insensitive
+            table(tableName) | extend KnownIssue = iif((* matches regex iQuery), true, false) | extend Reason = iif(KnownIssue, issue, "")
+        };
+        // search Type And Text column using string contains
+        let TypeAndTextContains = (tableName:string, issue:string, typeQuery:string, textQuery:string) {
+            table(tableName) | extend KnownIssue = iif((Type contains typeQuery and Text contains textQuery), true, false) | extend Reason = iif(KnownIssue, issue, "")
+        };
+        // search Type And Text column using regex sensitive match
+        let TypeAndTextMatches = (tableName:string, issue:string, typeQuery:string, textQuery:string) {
+            table(tableName) | extend KnownIssue = iif((Type matches regex typeQuery and Text matches regex textQuery), true, false) | extend Reason = iif(KnownIssue, issue, "")
+        };
+        // search Type And Text column using regex insensitive match
+        let TypeAndTextIMatches = (tableName:string, issue:string, typeQuery:string, textQuery:string) {
+            let itypeQuery = strcat('(?i:',typeQuery,')'); // re2 case insensitive
+            let itextQuery = strcat('(?i:',textQuery,')'); // re2 case insensitive
+            table(tableName) | extend KnownIssue = iif((Type matches regex itypeQuery and Text matches regex itextQuery), true, false) | extend Reason = iif(KnownIssue, issue, "")
+        };
+        // search Text column using string contains
+        let TextContains = (tableName:string, issue:string, query:string) {
+            table(tableName) | extend KnownIssue = iif((Text contains query), true, false) | extend Reason = iif(KnownIssue, issue, "")
+        };
+        // search Text column using regex sensitive match
+        let TextMatches = (tableName:string, issue:string, query:string) {
+            table(tableName) | extend KnownIssue = iif((Text matches regex query), true, false) | extend Reason = iif(KnownIssue, issue, "")
+        };
+        // search Text column using regex insensitive match
+        let TextIMatches = (tableName:string, issue:string, query:string) {
+            let iQuery = strcat('(?i:',query,')'); // re2 case insensitive
+            table(tableName) | extend KnownIssue = iif((Text matches regex iQuery), true, false) | extend Reason = iif(KnownIssue, issue, "")
+        };
+        // search Type column using string contains
+        let TypeContains = (tableName:string, issue:string, query:string) {
+            table(tableName) | extend KnownIssue = iif((Type contains query), true, false) | extend Reason = iif(KnownIssue, issue, "")
+        };
+        // search Type column using regex sensitive match
+        let TypeMatches = (tableName:string, issue:string, query:string) {
+            table(tableName) | extend KnownIssue = iif((Type matches regex query), true, false) | extend Reason = iif(KnownIssue, issue, "")
+        };
+        // search Type column using regex insensitive match
+        let TypeIMatches = (tableName:string, issue:string, query:string) {
+            let iQuery = strcat('(?i:',query,')'); // re2 case insensitive
+            table(tableName) | extend KnownIssue = iif((Type matches regex iQuery), true, false) | extend Reason = iif(KnownIssue, issue, "")
+        };
+        // search Type or Text columns using string contains
+        let TypeOrTextContains = (tableName:string, issue:string, query:string) {
+            table(tableName) | extend KnownIssue = iif((Type contains query or Text contains query), true, false) | extend Reason = iif(KnownIssue, issue, "")
+        };
+        // search Type or Text columns using regex sensitive match
+        let TypeOrTextMatches = (tableName:string, issue:string, query:string) {
+            table(tableName) | extend KnownIssue = iif((Type matches regex query or Text matches regex query), true, false) | extend Reason = iif(KnownIssue, issue, "")
+        };
+        // search Type or Text columns using regex insensitive match
+        let TypeOrTextIMatches = (tableName:string, issue:string, query:string) {
+            let iQuery = strcat('(?i:',query,')'); // re2 case insensitive
+            table(tableName) | extend KnownIssue = iif((Type matches regex iQuery or Text matches regex iQuery), true, false) | extend Reason = iif(KnownIssue, issue, "")
+        };
+        union 
+        // add known issue signatures here using one of the provided functions in format table, issue description, string pattern
+        // use *Matches (regex) only when needed as it is remarkably slower
+        // use Any* only when needed
+        TextContains(T, "out of disk space", "does not have enough disk space to operate"),
+        TextContains(T, "stuck replica", "is stuck"),
+        TypeContains(T,"api slow", "api.slow"),
+        TextContains(T,"slow progress", "DueToSlowProgress=True"),
+        TextContains(T, "replica performance 0x80071cf7", "0x80071cf7"),
+        TextContains(T, "communication errors", "failed with status -107374"),
+        TextContains(T, "port exhaustion", "failed to bind to local port for connecting: 0x80072747"),
+        TextContains(T, "rolling back", "rollingback"),
+        TextContains(T, "health check fail", "health check failed"),
+        TypeContains(T, "crash dumps in storage account", "crashdumpfound"),
+        TypeOrTextContains(T, "exception", "exception"),
+        TextContains(T, "cancellation token issue? (not confirmed)", "RunAsync is taking longer then expected time (15s) to cancel."),
+        TypeAndTextContains(T, "container activation issues", "ManagedHosting.ActivateContainerOperation", "Failed to start Container"),
+        TypeContains(T, "node open failure", "FabricNode._NodesOps_NodeOpenedFailed"),
+        TextContains(T, "expired certificate. use TSG: https://github.com/Azure/Service-Fabric-Troubleshooting-Guides/blob/master/Security/How%20to%20recover%20from%20an%20Expired%20Cluster%20Certificate.md", "SFRP poll: Exception encountered: System.InvalidOperationException: Could not load primary and secondary certificate"),
+        TypeContains(T, "reverse proxy errors", "ReverseProxy.SendResponseError"),
+        TypeAndTextContains(T, "reverse proxy errors possible port / app issue", "ReverseProxy.SendResponseError","SendResponseChunk, error = 3489660929"),
+        TypeContains(T, "lease slow send warning","Lease.SlowSendCompletion")
+    }
