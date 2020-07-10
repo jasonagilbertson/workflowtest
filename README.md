@@ -5,6 +5,10 @@
 [current download](https://github.com/microsoft/CollectServiceFabricData/releases/latest)  
 [requirements](#requirements)  
 [setup](#setup)  
+
+- [Kusto Quick Start](/docs/kustoQuickStart.md)  
+- [Log Analytics Quick Start](/docs/logAnalyticsQuickStart.md)  
+
 [configuration](#configuration)  
 [examples](#examples)  
 [reporting issues and feedback](#Reporting-Issues-and-Feedback)  
@@ -13,7 +17,7 @@
 ## Overview
 
 CollectSFData is a .net command-line utility to assist with the download of Azure Service Fabric diagnostic data from the configured Azure storage account.
-Optionally, CollectSFData can be configured to ingest downloaded data into a configured [Azure Data Explorer](https://docs.microsoft.com/en-us/azure/data-explorer/) (Kusto) database or Log Analytics (OMS) for analysis.
+Optionally, CollectSFData can be configured to ingest downloaded data into a configured [Azure Data Explorer](https://docs.microsoft.com/en-us/azure/data-explorer/) (Kusto) database or Log Analytics (OMS) for analysis. The diagnostic data is primarily used by Microsoft support and engineering teams for troubleshooting issues with Service Fabric itself. This low level ETL data is large and should only be collected after other troubleshooting steps have been performed.
 See [docs](/docs) and [configurationFiles](/configurationFiles) for additional information.
 
 Service Fabric diagnostic data that can be enumerated / downloaded from configured storage account:
@@ -65,7 +69,7 @@ Use the below steps to setup environment for use with CollectSFData.
 
 ### CollectSFData Setup with Kusto
 
-If using Kusto, an existing online Kusto database with authentication is required.
+If using Kusto, an existing online Kusto database with authentication is required. See [/docs/kustoQuickStart.md](/docs/kustoQuickStart.md)  
 
 - Existing online Kusto database. See [Create an Azure Data Explorer cluster](https://docs.microsoft.com/en-us/azure/data-explorer/create-cluster-database-portal) if creating a new cluster.
 - Authentication to Kusto database. This can be interactive or non-interactive using an Azure application id / spn.
@@ -74,7 +78,7 @@ If using Kusto, an existing online Kusto database with authentication is require
 
 ### CollectSFData Setup with Log Analytics
 
-If using Log Analytics (OMS), an existing or new workspace is required.  
+If using Log Analytics (OMS), an existing or new workspace is required. See [/docs/logAnalyticsQuickStart.md](/docs/logAnalyticsQuickStart.md)  
 
 - Existing Log Analytics workspace  
 - Primary / Secondary shared key from workspace -> advanced settings  
@@ -96,12 +100,9 @@ For help with command line options, type 'collectsfdata.exe -?'.
 
 ```text
 C:\>CollectSFData.exe /?
-2.5.7197.14241
-
 Usage: CollectSFData.exe [options]
 
 Options:
-  -v|--version                       Show version information
   -?|--?                             Show help information
   -client|--azureClientId            [string] azure application id / client id for use with authentication
                                          for non interactive to kusto. default is to use integrated AAD auth token
@@ -120,7 +121,7 @@ Options:
   -cf|--containerFilter              [string] string / regex to filter container names
   -dc|--deleteCache                  [bool] delete downloaded blobs from local disk at end of execution.
   -to|--stop                         [DateTime] end time range to collect data to. default is now.
-                                         example: "09/15/2019 08:04:06 -04:00"
+                                         example: "04/21/2020 09:03:49 -04:00"
   -ex|--examples                     [bool] show example commands
   -type|--gatherType                 [string] Gather data type:
                                         counter
@@ -141,6 +142,7 @@ Options:
   -kbs|--kustoUseBlobAsSource        [bool] for blob -> kusto direct ingest.
                                          requires .dtr (.csv) files to be csv compliant.
                                          service fabric 6.5+ dtr files are compliant.
+  -kim|--kustoUseIngestMessage       [bool] for kusto ingestion message tracking.
   -l|--list                          [bool] list files instead of downloading
   -lac|--logAnalyticsCreate          [bool] create new log analytics workspace.
                                          requires LogAnalyticsWorkspaceName, AzureResourceGroup,
@@ -161,17 +163,20 @@ Options:
   -log|--logFile                     [string] file name and path to save console output
   -nf|--nodeFilter                   [string] string / regex Filter on node name or any string in blob url
                                          (case-insensitive comparison)
+  -timeout|--noProgressTimeoutMin    [int] no progress timer in minutes. set to 0 to disable timeout.
   -ruri|--resourceUri                [string] resource uri / resource id used by microsoft internal support for tracking.
   -s|--sasKey                        [string] source blob SAS key required to access service fabric sflogs
                                          blob storage.
   -save|--saveConfiguration          [string] file name and path to save current configuration
+                                         specify file name 'collectsfdata.options.json' to create default configuration file.
   -from|--start                      [DateTime] start time range to collect data from.
                                          default is -2 hours.
-                                         example: "09/15/2019 06:04:06 -04:00"
+                                         example: "04/21/2020 07:03:49 -04:00"
   -t|--threads                       [int] override default number of threads equal to processor count.
   -u|--unique                        [bool] default true to query for fileuri before ingestion to prevent duplicates
   -uf|--uriFilter                    [string] string / regex filter for storage account blob uri.
   -stream|--useMemoryStream          [bool] default true to use memory stream instead of disk during format.
+  -v|--version                       [switch] check local and online version
 
 argument names on command line *are* case sensitive.
 bool argument values on command line should either be (true|1|on) or (false|0|off|null).

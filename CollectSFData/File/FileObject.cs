@@ -22,7 +22,7 @@ namespace CollectSFData
             FileUri = fileUri;
         }
 
-        public string BaseUri { get; set; }
+        public string BaseUri { get; set; } = string.Empty;
 
         public Action DownloadAction { get; set; }
 
@@ -42,12 +42,10 @@ namespace CollectSFData
 
         public string NodeName { get; private set; } = FileDataTypesEnum.unknown.ToString();
 
-        public string Parent { get; private set; }
-
-        public string RelativeUri { get; private set; }
+        public string RelativeUri => Regex.Replace(_fileUri, BaseUri, "", RegexOptions.IgnoreCase).TrimStart('/');
 
         public StreamManager Stream { get; set; }
-        
+
         private void ExtractNodeName(string fileUri)
         {
             // ARM nodename should be surrounded by / or _ or trailing $ and have _  and digit in name
@@ -67,7 +65,6 @@ namespace CollectSFData
             if (!string.IsNullOrEmpty(fileUri))
             {
                 fileUri = FileManager.NormalizePath(fileUri);
-                Parent = Path.GetDirectoryName(fileUri);
                 ExtractNodeName(fileUri);
                 FileDataType = FileTypes.MapFileDataTypeUri(fileUri);
 
@@ -86,8 +83,6 @@ namespace CollectSFData
                 {
                     fileUri = BaseUri.TrimEnd('/') + "/" + fileUri.TrimStart('/');
                 }
-
-                RelativeUri = fileUri.Replace(BaseUri,"").TrimStart('/');
             }
 
             _fileUri = fileUri;

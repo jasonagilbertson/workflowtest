@@ -12,12 +12,9 @@ For help with command line options, type 'collectsfdata.exe -?'.
 
 ```text
 G:\github\Tools\CollectSFData\CollectSFData\bin\x64\Debug>CollectSFData.exe /?
-2.5.7197.14241
-
 Usage: CollectSFData.exe [options]
 
 Options:
-  -v|--version                       Show version information
   -?|--?                             Show help information
   -client|--azureClientId            [string] azure application id / client id for use with authentication
                                          for non interactive to kusto. default is to use integrated AAD auth token
@@ -36,7 +33,7 @@ Options:
   -cf|--containerFilter              [string] string / regex to filter container names
   -dc|--deleteCache                  [bool] delete downloaded blobs from local disk at end of execution.
   -to|--stop                         [DateTime] end time range to collect data to. default is now.
-                                         example: "09/15/2019 08:04:06 -04:00"
+                                         example: "04/21/2020 09:03:49 -04:00"
   -ex|--examples                     [bool] show example commands
   -type|--gatherType                 [string] Gather data type:
                                         counter
@@ -57,6 +54,7 @@ Options:
   -kbs|--kustoUseBlobAsSource        [bool] for blob -> kusto direct ingest.
                                          requires .dtr (.csv) files to be csv compliant.
                                          service fabric 6.5+ dtr files are compliant.
+  -kim|--kustoUseIngestMessage       [bool] for kusto ingestion message tracking.
   -l|--list                          [bool] list files instead of downloading
   -lac|--logAnalyticsCreate          [bool] create new log analytics workspace.
                                          requires LogAnalyticsWorkspaceName, AzureResourceGroup,
@@ -77,17 +75,20 @@ Options:
   -log|--logFile                     [string] file name and path to save console output
   -nf|--nodeFilter                   [string] string / regex Filter on node name or any string in blob url
                                          (case-insensitive comparison)
+  -timeout|--noProgressTimeoutMin    [int] no progress timer in minutes. set to 0 to disable timeout.
   -ruri|--resourceUri                [string] resource uri / resource id used by microsoft internal support for tracking.
   -s|--sasKey                        [string] source blob SAS key required to access service fabric sflogs
                                          blob storage.
   -save|--saveConfiguration          [string] file name and path to save current configuration
+                                         specify file name 'collectsfdata.options.json' to create default configuration file.
   -from|--start                      [DateTime] start time range to collect data from.
                                          default is -2 hours.
-                                         example: "09/15/2019 06:04:06 -04:00"
+                                         example: "04/21/2020 07:03:49 -04:00"
   -t|--threads                       [int] override default number of threads equal to processor count.
   -u|--unique                        [bool] default true to query for fileuri before ingestion to prevent duplicates
   -uf|--uriFilter                    [string] string / regex filter for storage account blob uri.
   -stream|--useMemoryStream          [bool] default true to use memory stream instead of disk during format.
+  -v|--version                       [switch] check local and online version
 
 argument names on command line *are* case sensitive.
 bool argument values on command line should either be (true|1|on) or (false|0|off|null).
@@ -108,12 +109,12 @@ To use a default configuration file without having to specify on the command lin
 
 - **ContainerFilter** - optional. string / regex. default null. if populated, pattern will be used to filter which containers are enumerated for blob download.
 - **DeleteCache** - bool. default false. if true, blobs downloaded from storage account into 'cacheLocation' will be deleted at end after successful formatting and ingestion.
-- **GatherType** - required. string. options: any, counter, exception, table, trace
-  - **any** - 'any' without other filters will enumerate all containers for blobs matching criteria.
+- **GatherType** - required. string. options: counter, exception, table, trace, any
   - **counter** - 'counter' will enumerate service fabric performance counter (.blg) blobs from 'fabriccounters*' container.
   - **exception** - 'exception' will enumerate service fabric fabric crash dumps (.dmp) blobs from 'fabriccrashdumps*' container.
   - **table** - 'table' will enumerate service fabric events from blob tables 'fabriclogs*'
   - **trace** - 'trace' will enumerate service fabric diagnostic logs (.dtr) zip blobs from 'fabriclogs*'
+  - **any** - 'any' without other filters will enumerate all containers for blobs matching criteria.
 - **List** - bool. default false. if true, lists the blobs meeting all criteria for download but does not download the file.
 - **LogDebug** - bool. default false. if true, logs additional 'debug' output to console for troubleshooting.
 - **LogFile** - optional. string. default null. if populated with file and path, will log all console output to specified file. file is recreated every execution if exists.
@@ -124,13 +125,15 @@ To use a default configuration file without having to specify on the command lin
 - **Threads** - int. default is number of cpu. if specified, is the number of concurrent threads to use for download and ingest to Kusto overriding number of cpus.
 - **UriFilter** - optional. string. if populated has to be blob uri prefix and uses fast server side searching for blobs.
 - **NodeFilter** -  optional. string / regex. if populated uses client side searching for blobs after enumeration before download.
+- **NoProgressTimeoutMin** - optional. int. default 10. if no progress has been made during given timeout, utility will exit. set to 0 to disable.
 
 #### collectsfdata kusto arguments
 
-- **KustoCluster** - required. uri.
+- **KustoCluster** - required. uri. kusto cluster ingest url found in properties in azure portal. example: https://ingest-{{cluster}}[.{{location}}].kusto.windows.net/{{database}}
 - **KustoRecreateTable** - bool. default false. if true, will drop (recreate) table before ingesting new data regardless if table is currently populated.
 - **KustoTable** - required. string. name of kusto table to create and or use.
 - **KustoUseBlobAsSource** - **not currently used**. bool. default false. if true will ingest service diagnostic logs directly from storage account instead of downloading and formatting. to use this option, service fabric .dtr files have to be CSV compliant.
+- **KustoUseIngestMessage** - bool. default true. if true, will use kusto fail and success queue messaging for data ingestion (service bus additional overhead). if false, use kusto 'ingestion failures' table and data table 'RelativeUri' field for confirmation. better performance when set to false for larger ingests example 'KustoUseBlobAsSource'.
 
 #### collectsfdata log analytics arguments
 - **LogAnalyticsId** - required. guid. log analytics workspace id guid.
@@ -145,7 +148,7 @@ To use a default configuration file without having to specify on the command lin
 {
   "ContainerFilter": "",
   "DeleteCache": true,
-  "GatherType": "[any|counter|exception|trace|table]",
+  "GatherType": "[counter|exception|trace|table|any]",
   "List": false,
   "LogDebug": false,
   "LogFile": null,
@@ -165,7 +168,7 @@ To use a default configuration file without having to specify on the command lin
 {
   "ContainerFilter": "",
   "DeleteCache": true,
-  "GatherType": "[any|counter|exception|trace|table]",
+  "GatherType": "[counter|exception|trace|table|any]",
   "List": false,
   "LogDebug": false,
   "LogFile": null,
@@ -191,7 +194,7 @@ To use a default configuration file without having to specify on the command lin
 {
   "ContainerFilter": "",
   "DeleteCache": true,
-  "GatherType": "[any|counter|exception|trace|table]",
+  "GatherType": "[counter|exception|trace|table|any]",
   "List": false,
   "LogDebug": false,
   "LogFile": null,

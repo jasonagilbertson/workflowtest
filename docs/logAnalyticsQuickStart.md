@@ -1,7 +1,7 @@
 # Log Analytics QuickStart
 
-[log analytics example queries](../docs/logAnalyticsExampleQueries.md)  
-[log analytic queries in csl query format](../docs/LogAnalyticsQueries/logAnalyticsExampleQueries.md.csl)  
+[log analytics example queries](../LogAnalyticsQueries/logAnalyticsExampleQueries.md)  
+[log analytic queries in csl query format](../LogAnalyticsQueries/logAnalyticsExampleQueries.md.csl)  
 
 ## Overview
 
@@ -11,11 +11,11 @@ These steps will assist with getting started using collectsfdata and azure log a
 1. download latest version of collectsfdata and extract from [releases](https://github.com/microsoft/CollectServiceFabricData/releases/tag/CollectSFData-latest).
 2. create log analytics workspace in [portal](https://portal.azure.com).  
 
-    ![log analytics workspace](../media/la-workspace-1.png)
+    ![log analytics workspace](media/la-workspace-1.png)
 3. copy workspace id and key from 'advanced settings'  
     **NOTE: there is currently a bug where you may need to navigate into and out of 'advanced settings' multiple times before information is displayed 02/2019.**
 
-    ![log analytics advanced settings](../media/la-advanced-settings-1.png)
+    ![log analytics advanced settings](media/la-advanced-settings-1.png)
 4. create and save **'collectsfdata.loganalytics.json'** to working directory using template below. Modify:
     - SasKey - cluster storage sas key
     - LogAnalyticsId - log analytics workspace id
@@ -44,9 +44,9 @@ These steps will assist with getting started using collectsfdata and azure log a
 6. open workspace 'custom logs'. in this example, the ingest or custom log 'type' name is 'trace_latest_CL' (_CL is for custom log and is automatically appended by log analytics).
 7. verify record count with output.  
 	NOTE: this may take a while to complete ingestion even after utility has completed and this does vary regardless of size of ingest
-8. use example queries to get started. [log analytics example queries](../docs/logAnalyticsExampleQueries.md) and [log analytic queries in csl query format](../docs/LogAnalyticsQueries/logAnalyticsExampleQueries.md.csl).
+8. use example queries to get started. [log analytics example queries](../LogAnalyticsQueries/logAnalyticsExampleQueries.md) and [log analytic queries in csl query format](../LogAnalyticsQueries/logAnalyticsExampleQueries.md.csl).
 
-    ![log analytics advanced settings](../media/la-query-1.png)
+    ![log analytics advanced settings](media/la-query-1.png)
 ## Tips
 
 - it is difficult to remove data from workspace once it is in log analytics.

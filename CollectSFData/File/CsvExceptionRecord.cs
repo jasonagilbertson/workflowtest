@@ -36,15 +36,15 @@ namespace CollectSFData
 
         public string Text { get; set; }
 
-        public DateTime Timestamp { get; set; }
-
         public int TID { get; set; }
+
+        public DateTime Timestamp { get; set; }
 
         public string Type { get; set; }
 
         public IRecord Populate(FileObject fileObject, string traceRecord, string resourceUri = null)
         {
-            Match match = Regex.Match(traceRecord, @"/(?<Type>\w+?)\.exe\.(?<PID>\d+?)\.dmp");
+            Match match = Regex.Match(traceRecord, @"/(?<Type>\w+?)(\.\w+?)?\.(?<PID>\d+?)\.dmp");
 
             Timestamp = fileObject.LastModified.UtcDateTime;
             PID = Convert.ToInt32(match.Groups["PID"].Value);

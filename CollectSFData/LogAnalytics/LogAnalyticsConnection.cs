@@ -36,13 +36,13 @@ namespace CollectSFData
         {
             Log.Debug("enter");
 
-            if (!CanInjest(fileObject.RelativeUri))
+            if (!CanIngest(fileObject.RelativeUri))
             {
                 Log.Warning($"file already ingested. skipping: {fileObject.RelativeUri}");
                 return;
             }
 
-            ImportJson(FileMgr.Format(fileObject));
+            ImportJson(FileMgr.ProcessFile(fileObject));
         }
 
         public bool Connect()
@@ -216,7 +216,7 @@ namespace CollectSFData
             }
         }
 
-        private bool CanInjest(string relativeUri)
+        private bool CanIngest(string relativeUri)
         {
             if (!Config.Unique)
             {

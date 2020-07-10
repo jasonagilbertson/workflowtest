@@ -11,6 +11,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net.NetworkInformation;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -19,12 +20,13 @@ namespace CollectSFData
 {
     public class ConfigurationOptions : Constants
     {
-        private static readonly CommandLineArguments _cmdLineArgs = new CommandLineArguments();
         private static readonly string _workDir = "csfd";
+        private readonly CommandLineArguments _cmdLineArgs = new CommandLineArguments();
         private string _endTime;
         private bool _logDebugEnabled;
         private string _startTime;
         private string _tempPath = Path.GetTempPath().TrimEnd(Path.DirectorySeparatorChar);
+        private int _threads;
 
         public ConfigurationOptions()
         {
@@ -36,7 +38,6 @@ namespace CollectSFData
             _startTime = defaultOffset.AddHours(DefaultStartTimeHours).ToString(DefaultDatePattern);
             EndTimeUtc = defaultOffset.UtcDateTime;
             _endTime = defaultOffset.ToString(DefaultDatePattern);
-            Threads = Environment.ProcessorCount;
         }
 
         public string AzureClientId { get; set; }
@@ -108,7 +109,7 @@ namespace CollectSFData
 
         public string KustoCluster { get; set; }
 
-        public bool KustoCompressed { get; set; }
+        public bool KustoCompressed { get; set; } = true;
 
         public string KustoPurge { get; set; }
 
@@ -117,6 +118,8 @@ namespace CollectSFData
         public string KustoTable { get; set; }
 
         public bool KustoUseBlobAsSource { get; set; }
+
+        public bool KustoUseIngestMessage { get; set; } = true; // todo: remove
 
         public bool List { get; set; }
 
@@ -145,6 +148,8 @@ namespace CollectSFData
         public string LogFile { get; set; }
 
         public string NodeFilter { get; set; }
+
+        public int NoProgressTimeoutMin { get; set; } = 10;
 
         public string ResourceUri { get; set; }
 
@@ -181,13 +186,19 @@ namespace CollectSFData
 
         public DateTimeOffset StartTimeUtc { get; private set; }
 
-        public int Threads { get; set; }
+        public int Threads
+        {
+            get => _threads < 1 ? Environment.ProcessorCount : _threads;
+            set => _threads = value < 1 ? Environment.ProcessorCount : value;
+        }
 
         public bool Unique { get; set; } = true;
 
         public string UriFilter { get; set; }
 
         public bool UseMemoryStream { get; set; } = true;
+
+        public bool VersionOption { get; set; }
 
         public static FileTypesEnum ConvertFileType(string fileTypeString)
         {
@@ -197,6 +208,33 @@ namespace CollectSFData
             }
 
             return fileType;
+        }
+
+        public void CheckReleaseVersion()
+        {
+            string response = $"\r\n\tlocal running version: {Version}";
+            Http http = new Http();
+            Dictionary<string, string> headers = new Dictionary<string, string>();
+            headers.Add("User-Agent", $"{AppDomain.CurrentDomain.FriendlyName}");
+
+            try
+            {
+                if (new Ping().Send(new Uri(CodeLatestRelease).Host).Status == IPStatus.Success && http.SendRequest(uri: CodeLatestRelease, headers: headers))
+                {
+                    JToken downloadUrl = http.ResponseStreamJson.SelectToken("assets[0].browser_download_url");
+                    JToken downloadVersion = http.ResponseStreamJson.SelectToken("tag_name");
+                    JToken body = http.ResponseStreamJson.SelectToken("body");
+                    response += $"\r\n\tlatest download release version: {downloadVersion.ToString()}";
+                    response += $"\r\n\trelease notes: \r\n\t\t{body.ToString().Replace("\r\n", "\r\n\t\t")}";
+                    response += $"\r\n\tlatest download release url: {downloadUrl.ToString()}";
+                }
+
+                Log.Last(response);
+            }
+            catch
+            {
+                Log.Last(response);
+            }
         }
 
         public void DisplayStatus()
@@ -252,7 +290,7 @@ namespace CollectSFData
 
         public bool IsKustoConfigured()
         {
-            return (!string.IsNullOrEmpty(KustoCluster) & !string.IsNullOrEmpty(KustoTable));
+            return (!FileType.Equals(FileTypesEnum.any) & !string.IsNullOrEmpty(KustoCluster) & !string.IsNullOrEmpty(KustoTable));
         }
 
         public bool IsKustoPurgeRequested()
@@ -282,7 +320,7 @@ namespace CollectSFData
                 }
                 else if (args.Length == 0)
                 {
-                    _cmdLineArgs.CmdLineApp.ShowHelp();
+                    Log.Last(_cmdLineArgs.CmdLineApp.GetHelpText());
                     return false;
                 }
 
@@ -295,9 +333,9 @@ namespace CollectSFData
                         MergeConfigFile(ConfigurationFile);
                         Log.Info($"setting options to {DefaultOptionsFile}", ConsoleColor.Yellow);
                     }
-                    else if (args[0].StartsWith("/?"))
+                    else if (args[0].StartsWith("/?") | args[0].StartsWith("-?") | args[0].StartsWith("--?"))
                     {
-                        _cmdLineArgs.CmdLineApp.ShowHelp();
+                        Log.Last(_cmdLineArgs.CmdLineApp.GetHelpText());
                         return false;
                     }
                 }
@@ -334,7 +372,12 @@ namespace CollectSFData
                 EndTimeUtc = EndTimeUtc.AddHours(WarningTimeSpanMinHours);
                 Log.Highlight($"adding {WarningTimeSpanMinHours * 60} minutes to EndTimeUtc to compensate for sf file upload timer. New EndTimeUtc: ({EndTimeUtc.ToString("o")})");
 
-                if (Validate())
+                if (VersionOption)
+                {
+                    CheckReleaseVersion();
+                    return false;
+                }
+                else if (Validate())
                 {
                     Log.Info($"options:", ShallowCopy());
                     DisplayStatus();
@@ -346,29 +389,16 @@ namespace CollectSFData
             catch (Exception e)
             {
                 Log.Exception($"{e}");
-                _cmdLineArgs.CmdLineApp.ShowHelp();
+                Log.Last(_cmdLineArgs.CmdLineApp.GetHelpText());
                 return false;
             }
         }
 
         public void SaveConfigFile()
         {
-            string kustoTable = KustoTable;
-            string logAnalyticsName = LogAnalyticsName;
-
             if (string.IsNullOrEmpty(SaveConfiguration))
             {
                 return;
-            }
-
-            if (IsKustoConfigured())
-            {
-                KustoTable = Regex.Replace(KustoTable, $"^{GatherType}_", "");
-            }
-
-            if (IsLogAnalyticsConfigured())
-            {
-                LogAnalyticsName = Regex.Replace(LogAnalyticsName, $"^{GatherType}_", "");
             }
 
             // remove options that should not be saved in configuration file
@@ -382,20 +412,21 @@ namespace CollectSFData
             options.Remove("SasEndpointInfo");
             options.Remove("SaveConfiguration");
             options.Remove("StartTimeUtc");
-
-            if (!IsCacheLocationPreConfigured())
-            {
-                options.Remove("CacheLocation");
-            }
+            options.Remove("VersionOption");
 
             if (IsKustoConfigured())
             {
-                KustoTable = kustoTable;
+                options.Property("KustoTable").Value = Regex.Replace(KustoTable, $"^{GatherType}_", "");
             }
 
             if (IsLogAnalyticsConfigured())
             {
-                LogAnalyticsName = logAnalyticsName;
+                options.Property("LogAnalyticsName").Value = Regex.Replace(LogAnalyticsName, $"^{GatherType}_", "");
+            }
+
+            if (!IsCacheLocationPreConfigured())
+            {
+                options.Remove("CacheLocation");
             }
 
             Log.Info($"options results:", options);
@@ -618,7 +649,7 @@ namespace CollectSFData
             catch (Exception e)
             {
                 Log.Exception($"{e}");
-                _cmdLineArgs.CmdLineApp.ShowHelp();
+                Log.Last(_cmdLineArgs.CmdLineApp.GetHelpText());
                 return false;
             }
         }
@@ -756,6 +787,12 @@ namespace CollectSFData
                 LogAnalyticsName = FileType + "_" + LogAnalyticsName;
                 Log.Info($"adding prefix to logAnalyticsName: {LogAnalyticsName}");
 
+                if (IsLogAnalyticsConfigured() & Unique & string.IsNullOrEmpty(AzureSubscriptionId))
+                {
+                    Log.Error($"log analytics and 'Unique' require 'AzureSubscriptionId'. supply AzureSubscriptionId or set Unique to false.");
+                    retval = false;
+                }
+
                 if (LogAnalyticsCreate & LogAnalyticsRecreate)
                 {
                     Log.Error($"log analytics create and log analytics recreate *cannot* both be enabled. remove configuration for one");
@@ -808,8 +845,21 @@ namespace CollectSFData
 
             if (FileType == FileTypesEnum.unknown)
             {
-                Log.Warning($"invalid -type|--gatherType argument, value can be:", Enum.GetNames(typeof(FileTypesEnum)).Skip(2));
+                Log.Warning($"invalid -type|--gatherType argument, value can be:", Enum.GetNames(typeof(FileTypesEnum)).Skip(1));
                 retval = false;
+            }
+
+            if (FileType == FileTypesEnum.any && (UseMemoryStream | DeleteCache))
+            {
+                Log.Warning($"setting UseMemoryStream and DeleteCache to false for FileType 'any'");
+                UseMemoryStream = false;
+                DeleteCache = false;
+            }
+
+            if (FileType != FileTypesEnum.trace && KustoUseBlobAsSource)
+            {
+                Log.Warning($"setting KustoUseBlobAsSource to false for FileType: {FileType}");
+                KustoUseBlobAsSource = false;
             }
 
             return retval;
@@ -817,41 +867,13 @@ namespace CollectSFData
 
         private bool ValidateSasKey()
         {
-            bool retval = true;
-
             if (!string.IsNullOrEmpty(SasKey))
             {
                 SasEndpointInfo = new SasEndpoints(SasKey);
-
-                if (SasEndpointInfo.Parameters.SignedStartUtc > DateTime.Now.ToUniversalTime()
-                    | SasEndpointInfo.Parameters.SignedExpiryUtc < DateTime.Now.ToUniversalTime())
-                {
-                    Log.Error("Sas is not time valid", SasEndpointInfo.Parameters);
-                    retval = false;
-                }
-                else if (SasEndpointInfo.Parameters.SignedExpiryUtc.AddHours(-1) < DateTime.Now.ToUniversalTime())
-                {
-                    Log.Warning("Sas expiring in less than 1 hour", SasEndpointInfo.Parameters);
-                }
-
-                if (!SasEndpointInfo.Parameters.SignedPermission.Contains("r"))
-                {
-                    Log.Error("Sas does not contain read permissions", SasEndpointInfo.Parameters);
-                    retval = false;
-                }
-
-                if (!SasEndpointInfo.Parameters.IsServiceSas)
-                {
-                    if (!SasEndpointInfo.Parameters.SignedServices.Contains("b")
-                        & !SasEndpointInfo.Parameters.SignedServices.Contains("t"))
-                    {
-                        Log.Error("Sas does not contain blob or table signed services", SasEndpointInfo.Parameters);
-                        retval = false;
-                    }
-                }
+                return SasEndpointInfo.IsValid();
             }
 
-            return retval;
+            return true;
         }
 
         private bool ValidateSource()

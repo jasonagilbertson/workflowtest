@@ -61,6 +61,8 @@ namespace CollectSFData
 
         public CommandOption KustoUseBlobAsSource { get; set; }
 
+        public CommandOption KustoUseIngestMessage { get; set; }
+
         public CommandOption List { get; set; }
 
         public CommandOption LogAnalyticsCreate { get; set; }
@@ -85,6 +87,8 @@ namespace CollectSFData
 
         public CommandOption NodeFilter { get; set; }
 
+        public CommandOption NoProgressTimeoutMin { get; set; }
+
         public CommandOption ResourceUri { get; set; }
 
         public CommandOption SasKey { get; set; }
@@ -100,6 +104,8 @@ namespace CollectSFData
         public CommandOption UriFilter { get; set; }
 
         public CommandOption UseMemoryStream { get; set; }
+
+        public CommandOption VersionOption { get; set; }
 
         public void DisplayExamples()
         {
@@ -321,8 +327,8 @@ namespace CollectSFData
         {
             string newLine = "\r\n\t\t\t\t\t";
             string exampleDateFormat = "MM/dd/yyyy HH:mm:ss zzz";
-            CmdLineApp.VersionOption("-v|--version", () => Version);
             CmdLineApp.HelpOption("-?|--?");
+
             CmdLineApp.ExtendedHelpText = $"\r\nargument names on command line *are* case sensitive." +
                 $"\r\nbool argument values on command line should either be {TrueStringPattern} or {FalseStringPattern}." +
                 $"\r\n{CodeRepository}";
@@ -422,6 +428,10 @@ namespace CollectSFData
                     $"{newLine} service fabric 6.5+ dtr files are compliant.",
                     CommandOptionType.SingleValue);
 
+            KustoUseIngestMessage = CmdLineApp.Option("-kim|--kustoUseIngestMessage",
+                    $"[bool] for kusto ingestion message tracking.",
+                    CommandOptionType.SingleValue);
+
             List = CmdLineApp.Option("-l|--list",
                     "[bool] list files instead of downloading",
                     CommandOptionType.SingleValue);
@@ -478,6 +488,10 @@ namespace CollectSFData
                     $"{newLine} (case-insensitive comparison)",
                     CommandOptionType.SingleValue);
 
+            NoProgressTimeoutMin = CmdLineApp.Option("-timeout|--noProgressTimeoutMin",
+                    $"[int] no progress timer in minutes. set to 0 to disable timeout.",
+                    CommandOptionType.SingleValue);
+
             ResourceUri = CmdLineApp.Option("-ruri|--resourceUri",
                     $"[string] resource uri / resource id used by microsoft internal support for tracking.",
                     CommandOptionType.SingleValue);
@@ -488,7 +502,8 @@ namespace CollectSFData
                     CommandOptionType.SingleValue);
 
             SaveConfiguration = CmdLineApp.Option("-save|--saveConfiguration",
-                    "[string] file name and path to save current configuration",
+                    "[string] file name and path to save current configuration" +
+                    $"{newLine} specify file name 'collectsfdata.options.json' to create default configuration file.",
                     CommandOptionType.SingleValue);
 
             StartTimeStamp = CmdLineApp.Option("-from|--start",
@@ -512,6 +527,10 @@ namespace CollectSFData
             UseMemoryStream = CmdLineApp.Option("-stream|--useMemoryStream",
                     "[bool] default true to use memory stream instead of disk during format.",
                     CommandOptionType.SingleValue);
+
+            VersionOption = CmdLineApp.Option("-v|--version",
+                    "[switch] check local and online version",
+                    CommandOptionType.NoValue);
         }
     }
 }

@@ -152,6 +152,7 @@ namespace CollectSFData
             List<CsvTableRecord> results = new List<CsvTableRecord>();
             int tableRecords = 0;
             TableQuery query = GenerateTimeQuery(maxResults);
+            TotalFilesEnumerated++;
 
             while (token != null)
             {
@@ -210,6 +211,10 @@ namespace CollectSFData
                     IngestCallback?.Invoke(fileObject);
                 }
             }
+            else
+            {
+                TotalFilesSkipped++;
+            }
         }
 
         private List<CsvTableRecord> FormatRecordResults(CloudTable cloudTable, TableQuerySegment<DynamicTableEntity> tableSegment)
@@ -235,16 +240,15 @@ namespace CollectSFData
                         }
                     }
 
-                    TotalRecords++;
                     results.Add(new CsvTableRecord()
                     {
-                        Timestamp = result.Timestamp.DateTime,
+                        Timestamp = result.Timestamp.UtcDateTime,
                         EventTimeStamp = actualTimeStamp,
                         ETag = result.ETag,
                         PartitionKey = $"\"{result.PartitionKey}\"",
                         RowKey = $"\"{result.RowKey}\"",
                         PropertyName = $"\"{entity.Key}\"",
-                        PropertyValue = $"\"{entity.Value}\"",
+                        PropertyValue = $"\"{entity.Value.Replace("\"", "\"\"")}\"",
                         RelativeUri = cloudTable.Name,
                         ResourceUri = Config.ResourceUri
                     });

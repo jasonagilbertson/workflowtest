@@ -10,8 +10,10 @@ namespace CollectSFData
     public class Constants
     {
         public const string ArmApiVersion = "api-version=2018-05-01";
+        public const string CodeLatestRelease = "https://api.github.com/repos/microsoft/CollectServiceFabricData/releases/latest";
         public const string CodeRepository = "https://github.com/microsoft/CollectServiceFabricData";
         public const string CsvExtension = ".csv";
+        public const string DataExplorer = "https://dataexplorer.azure.com";
         public const string DateTimeFormat = "yyyy-MM-ddTHH:mm:ss.ffffffZ";
         public const string DefaultDatePattern = "MM/dd/yyyy HH:mm zzz";
         public const string DefaultOptionsFile = "collectsfdata.options.json";
@@ -23,6 +25,7 @@ namespace CollectSFData
         public const string ManagementAzureCom = "https://management.azure.com";
         public const int MaxCsvTransmitBytes = 1024 * 1024 * 100;
         public const int MaxJsonTransmitBytes = 1024 * 1024 * 25;
+        public const int MaxStreamTransmitBytes = 1024 * 1024 * 1024;
         public const int MaxResults = 5000;
         public const int MaxThreadMultiplier = 100;
         public const int MinThreadMultiplier = 10;

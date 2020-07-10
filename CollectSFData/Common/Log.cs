@@ -15,8 +15,10 @@ namespace CollectSFData
 {
     public static class Log
     {
+        public static int LogErrors = 0;
         private static readonly ConsoleColor _highlightBackground = Console.ForegroundColor;
         private static readonly ConsoleColor _highlightForeground = Console.BackgroundColor;
+        private static readonly SynchronizedList<MessageObject> _lastMessageList = new SynchronizedList<MessageObject>();
         private static readonly SynchronizedList<MessageObject> _messageList = new SynchronizedList<MessageObject>();
         private static readonly Task _taskWriter;
         private static readonly CancellationTokenSource _taskWriterCancellationToken = new CancellationTokenSource();
@@ -56,11 +58,12 @@ namespace CollectSFData
                 color = ConsoleColor.Yellow;
             }
 
-            Info(message, color, null, jsonSerializer, false, callerName);
+            Info(message, color, null, jsonSerializer, callerName: callerName);
         }
 
         public static void Close()
         {
+            _messageList.AddRange(_lastMessageList);
             _taskWriterCancellationToken.Cancel();
             _taskWriter.Wait();
         }
@@ -69,26 +72,33 @@ namespace CollectSFData
         {
             if (LogDebugEnabled)
             {
-                Info("debug: " + message, ConsoleColor.Black, ConsoleColor.Gray, jsonSerializer, false, callerName);
+                Info("debug: " + message, ConsoleColor.Black, ConsoleColor.Gray, jsonSerializer, callerName: callerName);
             }
         }
 
         public static void Error(string message, object jsonSerializer = null, [CallerMemberName] string callerName = "")
         {
-            Info("error: " + message, ConsoleColor.Red, ConsoleColor.Black, jsonSerializer, false, callerName);
+            Info("error: " + message, ConsoleColor.Red, ConsoleColor.Black, jsonSerializer, isError: true, callerName: callerName);
         }
 
         public static void Exception(string message, object jsonSerializer = null, [CallerMemberName] string callerName = "")
         {
-            Info("exception: " + message, ConsoleColor.Black, ConsoleColor.Yellow, jsonSerializer, false, callerName);
+            Info("exception: " + message, ConsoleColor.Black, ConsoleColor.Yellow, jsonSerializer, isError: true, callerName: callerName);
         }
 
         public static void Highlight(string message, object jsonSerializer = null, [CallerMemberName] string callerName = "")
         {
-            Info(message, _highlightForeground, _highlightBackground, jsonSerializer, false, callerName);
+            Info(message, _highlightForeground, _highlightBackground, jsonSerializer, callerName: callerName);
         }
 
-        public static void Info(string message, ConsoleColor? foregroundColor = null, ConsoleColor? backgroundColor = null, object jsonSerializer = null, bool minimal = false, [CallerMemberName] string callerName = "")
+        public static void Info(string message,
+                                ConsoleColor? foregroundColor = null,
+                                ConsoleColor? backgroundColor = null,
+                                object jsonSerializer = null,
+                                bool minimal = false,
+                                bool lastMessage = false,
+                                bool isError = false,
+                                [CallerMemberName] string callerName = "")
         {
             if (jsonSerializer != null)
             {
@@ -107,28 +117,56 @@ namespace CollectSFData
                 message = $"{Thread.CurrentThread.ManagedThreadId}:{callerName}:{message}{jsonSerializer}";
             }
 
-            _messageList.Add(new MessageObject()
+            if (lastMessage)
             {
-                TimeStamp = DateTime.Now.ToString("o") + "::",
-                Message = message,
-                BackgroundColor = backgroundColor,
-                ForegroundColor = foregroundColor
-            });
+                _lastMessageList.Add(new MessageObject()
+                {
+                    TimeStamp = DateTime.Now.ToString("o") + "::",
+                    Message = message,
+                    BackgroundColor = backgroundColor,
+                    ForegroundColor = foregroundColor,
+                    IsError = isError
+                });
+            }
+            else
+            {
+                _messageList.Add(new MessageObject()
+                {
+                    TimeStamp = DateTime.Now.ToString("o") + "::",
+                    Message = message,
+                    BackgroundColor = backgroundColor,
+                    ForegroundColor = foregroundColor,
+                    IsError = isError
+                });
+            }
         }
 
         public static void Info(string message, object jsonSerializer, [CallerMemberName] string callerName = "")
         {
-            Info(message, null, null, jsonSerializer, false, callerName);
+            Info(message, null, null, jsonSerializer, callerName: callerName);
         }
 
-        public static void Min(string message, ConsoleColor? foregroundColor = null, ConsoleColor? backgroundColor = null, object jsonSerializer = null, [CallerMemberName] string callerName = "")
+        public static void Last(string message,
+                                ConsoleColor? foregroundColor = null,
+                                ConsoleColor? backgroundColor = null,
+                                object jsonSerializer = null,
+                                [CallerMemberName] string callerName = "")
         {
-            Info(message, foregroundColor, backgroundColor, jsonSerializer, true, callerName);
+            Info(message, foregroundColor, backgroundColor, jsonSerializer, false, true, callerName: callerName);
+        }
+
+        public static void Min(string message,
+                                ConsoleColor? foregroundColor = null,
+                                ConsoleColor? backgroundColor = null,
+                                object jsonSerializer = null,
+                                [CallerMemberName] string callerName = "")
+        {
+            Info(message, foregroundColor, backgroundColor, jsonSerializer, true, callerName: callerName);
         }
 
         public static void Warning(string message, object jsonSerializer = null, [CallerMemberName] string callerName = "")
         {
-            Info("warning: " + message, ConsoleColor.Yellow, ConsoleColor.Black, jsonSerializer, false, callerName);
+            Info("warning: " + message, ConsoleColor.Yellow, ConsoleColor.Black, jsonSerializer, callerName: callerName);
         }
 
         private static bool CheckLogFile(string logFile)
@@ -231,18 +269,25 @@ namespace CollectSFData
                 Console.WriteLine(Environment.NewLine);
             }
 
-            Console.WriteLine(message.Message);
+            if (message.IsError)
+            {
+                LogErrors++;
+                Console.Error.WriteLine(message.Message);
+            }
+            else
+            {
+                Console.WriteLine(message.Message);
+            }
+
             ResetColor(message.ForegroundColor, message.BackgroundColor);
         }
 
         public class MessageObject
         {
             public ConsoleColor? BackgroundColor { get; set; }
-
             public ConsoleColor? ForegroundColor { get; set; }
-
+            public bool IsError { get; set; }
             public string Message { get; set; }
-
             public string TimeStamp { get; set; }
         }
     }

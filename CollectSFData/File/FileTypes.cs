@@ -74,7 +74,7 @@ namespace CollectSFData
             {
                 foreach (string dataType in _fileDataTypes)
                 {
-                    string dataTypePattern = $@"/(?<fileType>{dataType})s?(/|-)";
+                    string dataTypePattern = $@"(\\|/)(?<fileType>{dataType})s?(\\|/|-|_)";
 
                     if (Regex.IsMatch(fileUri, dataTypePattern, RegexOptions.IgnoreCase))
                     {
@@ -88,7 +88,7 @@ namespace CollectSFData
 
             if (!found)
             {
-                Log.Error($"unable to determine datatypepattern:{fileUri} using values:", _fileDataTypes);
+                Log.Warning($"unable to determine datatypepattern:{fileUri} using values:{string.Join(",", _fileDataTypes)}");
             }
 
             Log.Debug($"returning FileDataTypesEnum.{fileDataType.ToString()}");

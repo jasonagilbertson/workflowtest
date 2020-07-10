@@ -16,15 +16,99 @@ namespace CollectSFData
 
     public class Program : Instance
     {
+        private int _noProgressCounter = 0;
+        private Tuple<int, int, int, int, int, int, int> _progressTuple = new Tuple<int, int, int, int, int, int, int>(0, 0, 0, 0, 0, 0, 0);
+
         public static int Main(string[] args)
         {
             return new Program().Execute(args);
         }
 
+        public string DetermineClusterId()
+        {
+            string clusterId = string.Empty;
+
+            if (!string.IsNullOrEmpty(Config.SasEndpointInfo.AbsolutePath))
+            {
+                //fabriclogs-e2fd6f05-921f-4e81-92d5-f70a648be762
+                string pattern = ".+-([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})";
+
+                if (Regex.IsMatch(Config.SasEndpointInfo.AbsolutePath, pattern))
+                {
+                    clusterId = Regex.Match(Config.SasEndpointInfo.AbsolutePath, pattern).Groups[1].Value;
+                }
+            }
+
+            if (string.IsNullOrEmpty(clusterId))
+            {
+                TableManager tableMgr = new TableManager();
+
+                if (tableMgr.Connect())
+                {
+                    clusterId = tableMgr.QueryTablesForClusterId();
+                }
+            }
+
+            if (!string.IsNullOrEmpty(clusterId))
+            {
+                Log.Info($"cluster id:{clusterId}");
+            }
+            else
+            {
+                Log.Warning("unable to determine cluster id");
+            }
+
+            return clusterId;
+        }
+
+        public void DownloadAzureData()
+        {
+            string containerPrefix = null;
+            string tablePrefix = null;
+            string clusterId = DetermineClusterId();
+
+            if (!Config.FileType.Equals(FileTypesEnum.any) && !Config.FileType.Equals(FileTypesEnum.table))
+            {
+                containerPrefix = FileTypes.MapFileTypeUriPrefix(Config.FileType);
+
+                if (!string.IsNullOrEmpty(clusterId))
+                {
+                    // 's-' in prefix may not always be correct
+                    containerPrefix += "s-" + clusterId;
+                }
+
+                tablePrefix = containerPrefix + clusterId?.Replace("-", "");
+            }
+
+            if (Config.FileType == FileTypesEnum.table)
+            {
+                TableManager tableMgr = new TableManager()
+                {
+                    IngestCallback = (exportedFile) => { QueueForIngest(exportedFile); }
+                };
+
+                if (tableMgr.Connect())
+                {
+                    tableMgr.DownloadTables(tablePrefix);
+                }
+            }
+            else
+            {
+                BlobManager blobMgr = new BlobManager()
+                {
+                    IngestCallback = (sourceFileUri) => { QueueForIngest(sourceFileUri); },
+                    ReturnSourceFileLink = (Config.IsKustoConfigured() & Config.KustoUseBlobAsSource) | Config.FileType == FileTypesEnum.exception
+                };
+
+                if (blobMgr.Connect())
+                {
+                    blobMgr.DownloadContainers(containerPrefix);
+                }
+            }
+        }
+
         public int Execute(string[] args)
         {
-            StartTime = DateTime.Now;
-
             try
             {
                 if (!Config.PopulateConfig(args))
@@ -36,8 +120,16 @@ namespace CollectSFData
                 Log.Info($"version: {Version}");
                 ParallelConfig = new ParallelOptions { MaxDegreeOfParallelism = Config.Threads };
                 ServicePointManager.DefaultConnectionLimit = Config.Threads * MaxThreadMultiplier;
+                ServicePointManager.Expect100Continue = true;
+                ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls12;
+
                 ThreadPool.SetMinThreads(Config.Threads * MinThreadMultiplier, Config.Threads * MinThreadMultiplier);
                 ThreadPool.SetMaxThreads(Config.Threads * MaxThreadMultiplier, Config.Threads * MaxThreadMultiplier);
+
+                if (Config.NoProgressTimeoutMin > 0)
+                {
+                    NoProgressTimer = new Timer(NoProgressCallback, null, 0, 60 * 1000);
+                }
 
                 if (!InitializeKusto() | !InitializeLogAnalytics())
                 {
@@ -73,17 +165,47 @@ namespace CollectSFData
 
                 Config.DisplayStatus();
                 Config.SaveConfigFile();
+                TotalErrors += Log.LogErrors;
 
-                Log.Info($"{TotalFilesEnumerated} files enumerated.");
-                Log.Info($"{TotalFilesMatched} files matched.");
-                Log.Info($"{TotalFilesDownloaded} files downloaded.");
-                Log.Info($"{TotalFilesSkipped} files skipped.");
-                Log.Info($"{TotalFilesFormatted} files formatted.");
-                Log.Info($"{TotalErrors} errors.");
-                Log.Info($"{TotalRecords} records.");
-                Log.Info($"total execution time in minutes: { (DateTime.Now - StartTime).TotalMinutes.ToString("F2") }");
+                Log.Last($"{TotalFilesEnumerated} files enumerated.");
+                Log.Last($"{TotalFilesMatched} files matched.");
+                Log.Last($"{TotalFilesDownloaded} files downloaded.");
+                Log.Last($"{TotalFilesSkipped} files skipped.");
+                Log.Last($"{TotalFilesFormatted} files formatted.");
+                Log.Last($"{TotalErrors} errors.");
+                Log.Last($"{TotalRecords} records.");
 
-                return 0;
+                if (TotalFilesEnumerated > 0)
+                {
+                    if (Config.FileType != FileTypesEnum.table)
+                    {
+                        DateTime discoveredMinDateTime = new DateTime(DiscoveredMinDateTicks);
+                        DateTime discoveredMaxDateTime = new DateTime(DiscoveredMaxDateTicks);
+
+                        Log.Last($"discovered time range: {discoveredMinDateTime.ToString("o")} - {discoveredMaxDateTime.ToString("o")}", ConsoleColor.Green);
+
+                        if (discoveredMinDateTime.Ticks > Config.EndTimeUtc.Ticks | discoveredMaxDateTime.Ticks < Config.StartTimeUtc.Ticks)
+                        {
+                            Log.Last($"error: configured time range not within discovered time range:{Config.StartTimeUtc} - {Config.EndTimeUtc}", ConsoleColor.Red);
+                        }
+                    }
+
+                    if (TotalFilesMatched + TotalRecords == 0 && (!string.IsNullOrEmpty(Config.UriFilter) | !string.IsNullOrEmpty(Config.ContainerFilter) | !string.IsNullOrEmpty(Config.NodeFilter)))
+                    {
+                        Log.Last("0 records found and filters are configured. verify filters and / or try time range are correct.", ConsoleColor.Yellow);
+                    }
+                    else if (TotalFilesMatched + TotalRecords == 0)
+                    {
+                        Log.Last("0 records found. verify time range is correct.", ConsoleColor.Yellow);
+                    }
+                }
+                else
+                {
+                    Log.Last("0 files enumerated.", ConsoleColor.Red);
+                }
+
+                Log.Last($"total execution time in minutes: { (DateTime.Now - StartTime).TotalMinutes.ToString("F2") }");
+                return TotalErrors;
             }
             catch (Exception ex)
             {
@@ -94,6 +216,40 @@ namespace CollectSFData
             {
                 Log.Close();
             }
+        }
+
+        public void FinalizeKusto()
+        {
+            if (Config.IsKustoConfigured() && !Kusto.Complete())
+            {
+                Log.Warning($"there may have been errors during kusto import. {Config.CacheLocation} has *not* been deleted.");
+            }
+            else if (Config.IsKustoConfigured())
+            {
+                Log.Last($"{DataExplorer}/clusters/{Kusto.Endpoint.ClusterName}/databases/{Kusto.Endpoint.DatabaseName}", ConsoleColor.Cyan);
+            }
+        }
+
+        public bool InitializeKusto()
+        {
+            if (Config.IsKustoConfigured() | Config.IsKustoPurgeRequested())
+            {
+                Kusto = new KustoConnection();
+                return Kusto.Connect();
+            }
+
+            return true;
+        }
+
+        public bool InitializeLogAnalytics()
+        {
+            if (Config.IsLogAnalyticsConfigured() | Config.LogAnalyticsCreate | Config.IsLogAnalyticsPurgeRequested())
+            {
+                LogAnalytics = new LogAnalyticsConnection();
+                return LogAnalytics.Connect();
+            }
+
+            return true;
         }
 
         public void QueueForIngest(FileObject fileObject)
@@ -114,119 +270,11 @@ namespace CollectSFData
             }
             else
             {
-                TaskManager.QueueTaskAction(() => FileMgr.Format(fileObject));
+                TaskManager.QueueTaskAction(() => FileMgr.ProcessFile(fileObject));
             }
         }
 
-        private string DetermineClusterId()
-        {
-            string clusterId = string.Empty;
-
-            if (!string.IsNullOrEmpty(Config.SasEndpointInfo.AbsolutePath))
-            {
-                //fabriclogs-e2fd6f05-921f-4e81-92d5-f70a648be762
-                string pattern = ".+-([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})";
-
-                if (Regex.IsMatch(Config.SasEndpointInfo.AbsolutePath, pattern))
-                {
-                    clusterId = Regex.Match(Config.SasEndpointInfo.AbsolutePath, pattern).Groups[1].Value;
-                }
-            }
-
-            if (string.IsNullOrEmpty(clusterId))
-            {
-                TableManager tableMgr = new TableManager();
-
-                if (tableMgr.Connect())
-                {
-                    clusterId = tableMgr.QueryTablesForClusterId();
-                }
-            }
-
-            Log.Info($"cluster id:{clusterId}");
-            return clusterId;
-        }
-
-        private void DownloadAzureData()
-        {
-            string containerPrefix = null;
-            string tablePrefix = null;
-            string clusterId = DetermineClusterId();
-
-            if (!Config.FileType.Equals(FileTypesEnum.any))
-            {
-                containerPrefix = FileTypes.MapFileTypeUriPrefix(Config.FileType);
-                tablePrefix = containerPrefix + clusterId.Replace("-", "");
-            }
-
-            if (!string.IsNullOrEmpty(clusterId))
-            {
-                // 's-' in prefix may not always be correct
-                containerPrefix += "s-" + clusterId;
-            }
-
-            if (Config.FileType == FileTypesEnum.table)
-            {
-                TableManager tableMgr = new TableManager()
-                {
-                    IngestCallback = (exportedFile) => { QueueForIngest(exportedFile); }
-                };
-
-                if (tableMgr.Connect())
-                {
-                    tableMgr.DownloadTables(tablePrefix);
-                }
-            }
-            else
-            {
-                BlobManager blobMgr = new BlobManager()
-                {
-                    IngestCallback = (sourceFileUri) => { QueueForIngest(sourceFileUri); },
-                    ReturnSourceFileLink = (Config.IsKustoConfigured() & Config.KustoUseBlobAsSource) | Config.FileType == FileTypesEnum.exception
-                };
-
-                if (blobMgr.Connect())
-                {
-                    blobMgr.DownloadContainers(containerPrefix);
-                }
-            }
-        }
-
-        private void FinalizeKusto()
-        {
-            if (Config.IsKustoConfigured() && !Kusto.Complete())
-            {
-                Log.Warning($"there may have been errors during kusto import. {Config.CacheLocation} has *not* been deleted.");
-            }
-            else if (Config.IsKustoConfigured())
-            {
-                Log.Min($"https://dataexplorer.azure.com/clusters/{Kusto.Endpoint.ClusterName}/databases/{Kusto.Endpoint.DatabaseName}");
-            }
-        }
-
-        private bool InitializeKusto()
-        {
-            if (Config.IsKustoConfigured() | Config.IsKustoPurgeRequested())
-            {
-                Kusto = new KustoConnection();
-                return Kusto.Connect();
-            }
-
-            return true;
-        }
-
-        private bool InitializeLogAnalytics()
-        {
-            if (Config.IsLogAnalyticsConfigured() | Config.LogAnalyticsCreate | Config.IsLogAnalyticsPurgeRequested())
-            {
-                LogAnalytics = new LogAnalyticsConnection();
-                return LogAnalytics.Connect();
-            }
-
-            return true;
-        }
-
-        private void UploadCacheData()
+        public void UploadCacheData()
         {
             Log.Info("enter");
             List<string> files = new List<string>();
@@ -282,6 +330,37 @@ namespace CollectSFData
                 {
                     QueueForIngest(fileObject);
                 }
+            }
+        }
+
+        private void NoProgressCallback(object state)
+        {
+            Log.Highlight($"checking progress {_noProgressCounter} of {Config.NoProgressTimeoutMin}.");
+
+            Tuple<int, int, int, int, int, int, int> tuple = new Tuple<int, int, int, int, int, int, int>(
+                TotalErrors,
+                TotalFilesDownloaded,
+                TotalFilesEnumerated,
+                TotalFilesFormatted,
+                TotalFilesMatched,
+                TotalFilesSkipped,
+                TotalRecords);
+
+            if (tuple.Equals(_progressTuple))
+            {
+                if (_noProgressCounter >= Config.NoProgressTimeoutMin)
+                {
+                    string message = $"no progress timeout reached {Config.NoProgressTimeoutMin}. exiting application.";
+                    Log.Error(message);
+                    Log.Close();
+                    throw new TimeoutException(message);
+                }
+                ++_noProgressCounter;
+            }
+            else
+            {
+                _noProgressCounter = 0;
+                _progressTuple = tuple;
             }
         }
     }
