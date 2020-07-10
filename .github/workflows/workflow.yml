@@ -1,4 +1,4 @@
-name: CI CollectSFData test
+name: CI CollectSFData
 
 env:
   artifacts_path: CollectSFData\bin\x64\artifacts
